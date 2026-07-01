@@ -11,7 +11,12 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from scipy.sparse import csr_matrix
 import scipy.stats as stats
-# Set Page Config
+
+# Pipeline imports
+from src.preprocessor import Preprocessor
+from src.features import FeatureEngineer
+from src.models.clustering import ClusteringModel
+
 st.set_page_config(
     page_title="Shopper Spectrum - E-Commerce Analytics Hub",
     page_icon="🛒",
@@ -304,21 +309,12 @@ def load_pretrained_resources():
     # Fallback fit-on-the-fly if files load partially but scaler/kmeans is missing
     if (scaler is None or kmeans is None) and rfm_data is not None:
         try:
-            # Outlier Capping as done in build_models
             rfm_fit = rfm_data.copy()
-            for col in ["Recency", "Frequency", "Monetary"]:
-                if col in rfm_fit.columns:
-                    cap_val = rfm_fit[col].quantile(0.995)
-                    rfm_fit[col] = np.clip(rfm_fit[col], None, cap_val)
-            rfm_log = np.log1p(rfm_fit[["Recency", "Frequency", "Monetary"]])
-            if scaler is None:
-                scaler = StandardScaler()
-                scaler.fit(rfm_log)
-            if kmeans is None:
-                kmeans = KMeans(n_clusters=4, random_state=42, n_init=10)
-                kmeans.fit(scaler.transform(rfm_log))
-            if cluster_mapping is None:
-                cluster_mapping = {2: 'High-Value', 3: 'Regular', 1: 'At-Risk', 0: 'Occasional'}
+            # Use the clustering model from src pipeline
+            _, scaler_fb, kmeans_fb, mapping_fb = ClusteringModel.train(rfm_fit, n_clusters=4)
+            if scaler is None: scaler = scaler_fb
+            if kmeans is None: kmeans = kmeans_fb
+            if cluster_mapping is None: cluster_mapping = mapping_fb
         except Exception as e:
             st.warning(f"Failed to fit fallback models: {e}")
 
@@ -349,80 +345,12 @@ default_df = load_cleaned_transactions()
 def clean_and_build_pipeline(uploaded_file):
     """Processes uploaded dataset and fits KMeans / similarities on the fly."""
     try:
-        df = pd.read_csv(uploaded_file, encoding="ISO-8859-1")
-        df = df.drop_duplicates()
-        df = df.dropna(subset=["CustomerID"])
-        df["CustomerID"] = df["CustomerID"].astype(int)
+        raw_df = pd.read_csv(uploaded_file, encoding="ISO-8859-1")
         
-        # Exclude admin codes
-        invalid_stockcodes = ["POST", "D", "C2", "M", "BANK CHARGES", "PADS", "DOT", "CRUK", "AMAZONFEE", "S"]
-        df = df[~df["StockCode"].astype(str).isin(invalid_stockcodes)]
-        df = df[~df["StockCode"].astype(str).str.startswith("gift_", na=False)]
-        
-        df["Description"] = df["Description"].astype(str).str.upper().str.strip()
-        invalid_keywords = ["POSTAGE", "DOTCOM POSTAGE", "CRUK COMMISSION", "MANUAL", "AMAZON FEE", "SAMPLES", "ADJUST", "CHECK", "DAMAGED", "LOST", "WRONG", "??", "WRONG CODE", "SHIPPING"]
-        for kw in invalid_keywords:
-            df = df[~df["Description"].str.contains(kw, na=False, case=False, regex=False)]
-            
-        # Store pre-cancellations for returns
-        df_pre_cancel = df.copy()
-        
-        df = df[~df["InvoiceNo"].astype(str).str.startswith("C", na=False)]
-        df["TotalAmount"] = df["Quantity"] * df["UnitPrice"]
-        df["InvoiceDate"] = pd.to_datetime(df["InvoiceDate"])
-        
-        df_purchases_only = df[(df["Quantity"] > 0) & (df["UnitPrice"] > 0)].copy()
-        
-        # Build RFM
-        max_date = df_purchases_only["InvoiceDate"].max()
-        rfm = df_purchases_only.groupby("CustomerID").agg({
-            "TotalAmount": "sum"
-        }).rename(columns={"TotalAmount": "Monetary"})
-        
-        purchase_metrics = df_purchases_only.groupby("CustomerID").agg({
-            "InvoiceDate": lambda x: (max_date - x.max()).days,
-            "InvoiceNo": "nunique"
-        }).rename(columns={"InvoiceDate": "Recency", "InvoiceNo": "Frequency"})
-        
-        rfm = rfm.join(purchase_metrics, how="inner")
-        rfm = rfm[rfm["Monetary"] > 0]
-        
-        # Outlier Capping
-        for col in ["Recency", "Frequency", "Monetary"]:
-            cap_val = rfm[col].quantile(0.995)
-            rfm[col] = np.clip(rfm[col], None, cap_val)
-            
-        # Scaling & KMeans
-        rfm_log = np.log1p(rfm[["Recency", "Frequency", "Monetary"]])
-        scaler = StandardScaler()
-        rfm_scaled = scaler.fit_transform(rfm_log)
-        
-        kmeans = KMeans(n_clusters=4, random_state=42, n_init=10)
-        rfm["Cluster"] = kmeans.fit_predict(rfm_scaled)
-        
-        # Mapping
-        cluster_profiles = rfm.groupby("Cluster").mean()
-        sorted_by_monetary = cluster_profiles.sort_values(by="Monetary")
-        monetary_ranks = sorted_by_monetary.index.tolist()
-        
-        cluster_mapping = {}
-        cluster_mapping[monetary_ranks[3]] = "High-Value"
-        cluster_mapping[monetary_ranks[2]] = "Regular"
-        
-        if cluster_profiles.loc[monetary_ranks[0], "Recency"] > cluster_profiles.loc[monetary_ranks[1], "Recency"]:
-            cluster_mapping[monetary_ranks[0]] = "At-Risk"
-            cluster_mapping[monetary_ranks[1]] = "Occasional"
-        else:
-            cluster_mapping[monetary_ranks[0]] = "Occasional"
-            cluster_mapping[monetary_ranks[1]] = "At-Risk"
-            
-        rfm["Segment"] = rfm["Cluster"].map(cluster_mapping)
-        
-        # Return Ratio calculation
-        returns_count = df_pre_cancel[df_pre_cancel["Quantity"] < 0].groupby("CustomerID")["InvoiceNo"].nunique()
-        total_invoices = df_pre_cancel.groupby("CustomerID")["InvoiceNo"].nunique()
-        return_ratio = (returns_count / total_invoices).fillna(0).to_frame(name="ReturnRatio")
-        rfm = rfm.join(return_ratio, how="left").fillna(0)
+        # Use modular pipeline functions
+        _, df_purchases_only, pre_cancellation_df = Preprocessor.clean_data(raw_df)
+        rfm = FeatureEngineer.engineer_rfm(df_purchases_only, pre_cancellation_df)
+        rfm, scaler, kmeans, cluster_mapping = ClusteringModel.train(rfm, n_clusters=4)
         
         if "Recency" in rfm.columns:
             rfm["Recency"] = rfm["Recency"].round().astype(int)
@@ -891,7 +819,8 @@ elif menu == "🔍 Customer Segmentation Module":
                                         pd.Series([scaled_T]),
                                         pd.Series([monetary_val]),
                                         time=3, # 3 months CLV projection
-                                        discount_rate=0.01
+                                        discount_rate=0.01,
+                                        freq="M"
                                     ).iloc[0])
                             except Exception as clv_err:
                                 expected_purchases = 0.0

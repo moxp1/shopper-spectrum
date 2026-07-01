@@ -6,3 +6,8 @@ seaborn
 streamlit
 notebook
 openpyxl
+plotly
+dill
+scipy
+lifetimes
+fastparquet

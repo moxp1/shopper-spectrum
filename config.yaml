@@ -1,0 +1,20 @@
+paths:
+  input_data: "dataset.csv"
+  cleaned_data: "cleaned_dataset.parquet"
+  rfm_data: "rfm_data.parquet"
+  rfm_clustered: "rfm_clustered.parquet"
+  scaler: "scaler.pkl"
+  kmeans: "kmeans.pkl"
+  cluster_mapping: "cluster_mapping.pkl"
+  bgf: "bgf.pkl"
+  ggf: "ggf.pkl"
+  recommendations: "recommendations.pkl"
+  product_list: "product_list.pkl"
+  association_rules: "association_rules.pkl"
+
+pipeline:
+  n_clusters: 4
+  min_purchases: 5
+  top_n_recommendations: 5
+  clv_months: 3
+  clv_discount_rate: 0.01
