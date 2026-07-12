@@ -22,7 +22,7 @@ class ClusteringModel:
         kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
         rfm_df["Cluster"] = kmeans.fit_predict(rfm_scaled)
         
-        sil = silhouette_score(rfm_scaled, rfm_df["Cluster"], sample_size=10000, random_state=42)
+        sil = silhouette_score(rfm_scaled, rfm_df["Cluster"], sample_size=500, random_state=42)
         logger.info(f"K-Means trained. Inertia (Loss): {kmeans.inertia_:.2f} | Silhouette: {sil:.4f}")
         
         cluster_profiles = rfm_df.groupby("Cluster").mean()

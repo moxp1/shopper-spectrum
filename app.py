@@ -331,6 +331,9 @@ def load_cleaned_transactions():
                 df["Quantity"] = df["Quantity"].round().astype(int)
             if "CustomerID" in df.columns:
                 df["CustomerID"] = df["CustomerID"].astype(int)
+            for col in ["Description", "Country", "InvoiceNo", "StockCode"]:
+                if col in df.columns:
+                    df[col] = df[col].astype("category")
             return df
         except Exception as e:
             st.error(f"Error loading cleaned dataset: {e}")
