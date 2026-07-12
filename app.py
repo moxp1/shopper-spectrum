@@ -987,7 +987,7 @@ elif menu == "🎯 Product Recommendation Engine":
                     else:
                         # Dynamic Basket Rules
                         basket = active_df.groupby(["InvoiceNo", "Description"])["Quantity"].sum().unstack().reset_index().fillna(0).set_index("InvoiceNo")
-                        basket = basket.applymap(lambda x: 1 if x > 0 else 0)
+                        basket = basket.map(lambda x: 1 if x > 0 else 0)
                         
                         if selected_product in basket.columns:
                             support_target = basket[selected_product].mean()
