@@ -370,25 +370,29 @@ def clean_and_build_pipeline(uploaded_file):
         return None, None, None, None, None, None
 
 # ----------------- DYNAMIC RECOMMENDATION ALGORITHMS -----------------
-@st.cache_data
+@st.cache_resource
 def build_content_recommender(df):
     """Computes TF-IDF on descriptions for content-based matching."""
     try:
         unique_desc = df[["Description"]].drop_duplicates().dropna()
         tfidf = TfidfVectorizer(stop_words='english')
         tfidf_matrix = tfidf.fit_transform(unique_desc["Description"])
-        cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
-        return unique_desc.reset_index(drop=True), cosine_sim
+        return unique_desc.reset_index(drop=True), tfidf_matrix
     except Exception as e:
         st.error(f"Error building TF-IDF recommender: {e}")
         return None, None
 
-def get_content_recommendations(target_desc, prod_df, cosine_sim, top_n=5):
+def get_content_recommendations(target_desc, prod_df, tfidf_matrix, top_n=5):
     """Fetches text similarity recommendation."""
-    if prod_df is None or cosine_sim is None or target_desc not in prod_df["Description"].values:
+    if prod_df is None or tfidf_matrix is None or target_desc not in prod_df["Description"].values:
         return []
     idx = prod_df[prod_df["Description"] == target_desc].index[0]
-    sim_scores = list(enumerate(cosine_sim[idx]))
+    
+    # Compute similarity only for the target product
+    target_vector = tfidf_matrix[idx]
+    cosine_sim_vector = cosine_similarity(target_vector, tfidf_matrix).flatten()
+    
+    sim_scores = list(enumerate(cosine_sim_vector))
     sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)[1:top_n+1]
     return [(prod_df.iloc[i]["Description"], round(score * 100, 1)) for i, score in sim_scores]
 
