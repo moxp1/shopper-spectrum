@@ -1,9 +1,9 @@
-pandas==2.3.1
-numpy==2.2.4
-scikit-learn==1.7.1
+pandas>=2.0.0
+numpy>=1.24.0
+scikit-learn>=1.2.0
 matplotlib
 seaborn
-streamlit==1.55.0
+streamlit>=1.40.0
 notebook
 openpyxl
 plotly
