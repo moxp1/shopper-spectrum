@@ -950,13 +950,26 @@ elif menu == "🎯 Product Recommendation Engine":
                             </div>
                             """, unsafe_allow_html=True)
                     else:
-                        # Dynamic Item-Based CF
-                        item_user = active_df.pivot_table(index="Description", columns="CustomerID", values="Quantity", aggfunc="count", fill_value=0)
-                        item_sim = cosine_similarity(item_user)
-                        item_sim_df = pd.DataFrame(item_sim, index=item_user.index, columns=item_user.index)
-                        if selected_product in item_sim_df.index:
-                            sim_products = item_sim_df[selected_product].sort_values(ascending=False)[1:6]
-                            for prod, score in sim_products.items():
+                        # Dynamic Item-Based CF (Memory Optimized)
+                        df_filtered = active_df.dropna(subset=["Description", "CustomerID"]).copy()
+                        customer_u = df_filtered["CustomerID"].astype('category')
+                        description_u = df_filtered["Description"].astype('category')
+                        
+                        row = description_u.cat.codes
+                        col = customer_u.cat.codes
+                        data = np.ones(len(df_filtered))
+                        
+                        item_user_sparse = csr_matrix((data, (row, col)), shape=(len(description_u.cat.categories), len(customer_u.cat.categories)))
+                        
+                        if selected_product in description_u.cat.categories:
+                            target_idx = description_u.cat.categories.get_loc(selected_product)
+                            item_sim = cosine_similarity(item_user_sparse[target_idx], item_user_sparse).flatten()
+                            
+                            similar_indices = item_sim.argsort()[::-1][1:6]
+                            
+                            for idx in similar_indices:
+                                prod = description_u.cat.categories[idx]
+                                score = item_sim[idx]
                                 st.markdown(f"""
                                 <div class='rec-card'>
                                     <span class='rec-icon'>🎁</span>
