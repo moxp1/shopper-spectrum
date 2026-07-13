@@ -1005,33 +1005,46 @@ elif menu == "🎯 Product Recommendation Engine":
                             </div>
                             """, unsafe_allow_html=True)
                     else:
-                        # Dynamic Basket Rules
-                        basket = active_df.groupby(["InvoiceNo", "Description"])["Quantity"].sum().unstack().reset_index().fillna(0).set_index("InvoiceNo")
-                        basket = basket.map(lambda x: 1 if x > 0 else 0)
+                        # Dynamic Basket Rules (Memory Optimized)
+                        total_invoices = active_df["InvoiceNo"].nunique()
+                        target_invoices = set(active_df[active_df["Description"] == selected_product]["InvoiceNo"])
                         
-                        if selected_product in basket.columns:
-                            support_target = basket[selected_product].mean()
+                        if len(target_invoices) > 0 and total_invoices > 0:
+                            support_target = len(target_invoices) / total_invoices
+                            
+                            # Get co-purchased items
+                            co_purchased = active_df[active_df["InvoiceNo"].isin(target_invoices)]
+                            co_counts = co_purchased.groupby("Description")["InvoiceNo"].nunique()
+                            
+                            # Get global counts for lift
+                            global_counts = active_df.groupby("Description")["InvoiceNo"].nunique()
+                            
                             rules = []
-                            for prod in basket.columns:
-                                if prod != selected_product:
-                                    support_both = (basket[selected_product] & basket[prod]).mean()
+                            for prod, count in co_counts.items():
+                                if prod != selected_product and count > 0:
+                                    support_both = count / total_invoices
                                     if support_both >= 0.01:
                                         confidence = support_both / support_target
-                                        lift = confidence / basket[prod].mean()
+                                        support_prod = global_counts.get(prod, 0) / total_invoices
+                                        lift = confidence / support_prod if support_prod > 0 else 0
                                         rules.append((prod, lift, confidence))
+                            
                             rules = sorted(rules, key=lambda x: x[1], reverse=True)[:5]
-                            for r_name, lift, conf in rules:
-                                st.markdown(f"""
-                                <div class='rec-card'>
-                                    <span class='rec-icon'>🛒</span>
-                                    <div style='flex-grow:1;'>
-                                        <span class='rec-text'>{r_name}</span>
-                                        <div style='font-size:0.8rem; color:#38bdf8; margin-top:4px;'>Confidence: <b>{conf*100:.1f}%</b> | Lift: <b>{lift:.2f}x</b></div>
+                            if rules:
+                                for prod, lift, conf in rules:
+                                    st.markdown(f"""
+                                    <div class='rec-card'>
+                                        <span class='rec-icon'>🛒</span>
+                                        <div style='flex-grow:1;'>
+                                            <span class='rec-text'>{prod}</span>
+                                            <div style='font-size:0.8rem; color:#38bdf8; margin-top:4px;'>Confidence: <b>{conf*100:.1f}%</b> | Lift: <b>{lift:.2f}x</b></div>
+                                        </div>
                                     </div>
-                                </div>
-                                """, unsafe_allow_html=True)
+                                    """, unsafe_allow_html=True)
+                            else:
+                                st.info("No strong association rules found for this product.")
                         else:
-                            st.info("Product not present in transaction matrix.")
+                            st.info("Product not found in user transactional matrix.")
         else:
             st.warning("Product list or dataset is missing.")
             
